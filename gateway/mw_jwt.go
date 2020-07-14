@@ -8,12 +8,14 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
 	cache "github.com/pmylund/go-cache"
+	"github.com/square/go-jose"
 
 	"github.com/TykTechnologies/tyk/apidef"
 	"github.com/TykTechnologies/tyk/user"
@@ -40,6 +42,7 @@ func (k *JWTMiddleware) EnabledForSpec() bool {
 }
 
 var JWKCache *cache.Cache
+var JWKCacheSquare *cache.Cache
 
 type JWK struct {
 	Alg string   `json:"alg"`
@@ -56,14 +59,17 @@ type JWKs struct {
 	Keys []JWK `json:"keys"`
 }
 
-func (k *JWTMiddleware) getSecretFromURL(url, kid, keyType string) ([]byte, error) {
+func (k *JWTMiddleware) getSecretFromURL(url, kid, keyType string) (interface{}, error) {
 	// Implement a cache
 	if JWKCache == nil {
 		k.Logger().Debug("Creating JWK Cache")
 		JWKCache = cache.New(240*time.Second, 30*time.Second)
+		JWKCacheSquare = cache.New(240*time.Second, 30*time.Second)
 	}
 
 	var jwkSet JWKs
+	var jwkSetFallback jose.JSONWebKeySet
+
 	cachedJWK, found := JWKCache.Get(k.Spec.APIID)
 	if !found {
 		// Get the JWK
@@ -74,9 +80,14 @@ func (k *JWTMiddleware) getSecretFromURL(url, kid, keyType string) ([]byte, erro
 			return nil, err
 		}
 		defer resp.Body.Close()
-
+		buf, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			k.Logger().WithError(err).Error("Failed to get read response body")
+			return nil, err
+		}
+		json.Unmarshal(buf, &jwkSetFallback)
 		// Decode it
-		if err := json.NewDecoder(resp.Body).Decode(&jwkSet); err != nil {
+		if err := json.Unmarshal(buf, &jwkSet); err != nil {
 			k.Logger().WithError(err).Error("Failed to decode body JWK")
 			return nil, err
 		}
@@ -84,14 +95,23 @@ func (k *JWTMiddleware) getSecretFromURL(url, kid, keyType string) ([]byte, erro
 		// Cache it
 		k.Logger().Debug("Caching JWK")
 		JWKCache.Set(k.Spec.APIID, jwkSet, cache.DefaultExpiration)
+		JWKCacheSquare.Set(k.Spec.APIID, jwkSetFallback, cache.DefaultExpiration)
 	} else {
 		jwkSet = cachedJWK.(JWKs)
+		if v, ok := JWKCacheSquare.Get(k.Spec.APIID); ok {
+			jwkSetFallback = v.(jose.JSONWebKeySet)
+		}
 	}
 
 	k.Logger().Debug("Checking JWKs...")
-	for _, val := range jwkSet.Keys {
+	for i, val := range jwkSet.Keys {
 		if val.KID != kid || strings.ToLower(val.Kty) != strings.ToLower(keyType) {
 			continue
+		}
+		if len(val.X5c) == 0 {
+			if len(jwkSetFallback.Keys) == len(jwkSet.Keys) {
+				return jwkSetFallback.Keys[i].Key, nil
+			}
 		}
 		if len(val.X5c) > 0 {
 			// Use the first cert only
@@ -123,18 +143,13 @@ func (k *JWTMiddleware) getIdentityFromToken(token *jwt.Token) (string, error) {
 	return tykId, err
 }
 
-func (k *JWTMiddleware) getSecretToVerifySignature(r *http.Request, token *jwt.Token) ([]byte, error) {
+func (k *JWTMiddleware) getSecretToVerifySignature(r *http.Request, token *jwt.Token) (interface{}, error) {
 	config := k.Spec.APIDefinition
 	// Check for central JWT source
 	if config.JWTSource != "" {
 		// Is it a URL?
 		if httpScheme.MatchString(config.JWTSource) {
-			secret, err := k.getSecretFromURL(config.JWTSource, token.Header[KID].(string), k.Spec.JWTSigningMethod)
-			if err != nil {
-				return nil, err
-			}
-
-			return secret, nil
+			return k.getSecretFromURL(config.JWTSource, token.Header[KID].(string), k.Spec.JWTSigningMethod)
 		}
 
 		// If not, return the actual value
@@ -593,12 +608,20 @@ func (k *JWTMiddleware) ProcessRequest(w http.ResponseWriter, r *http.Request, _
 		}
 		switch k.Spec.JWTSigningMethod {
 		case RSASign, ECDSASign:
-			key, err := ParseRSAPublicKey(val)
-			if err != nil {
-				logger.WithError(err).Error("Failed to decode JWT key")
-				return nil, errors.New("Failed to decode JWT key")
+			switch e := val.(type) {
+			case []byte:
+				key, err := ParseRSAPublicKey(e)
+				if err != nil {
+					logger.WithError(err).Error("Failed to decode JWT key")
+					return nil, errors.New("Failed to decode JWT key")
+				}
+				return key, nil
+			default:
+				// We have already parsed the correct key so we just return it here.No need
+				// for checks because they already happened somewhere ele.
+				return e, nil
 			}
-			return key, nil
+
 		default:
 			return val, nil
 		}

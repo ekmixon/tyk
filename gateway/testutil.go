@@ -467,6 +467,7 @@ const (
 	testGraphQLDataSource = TestHttpAny + "/graphql-data-source"
 	testRESTDataSource    = TestHttpAny + "/rest-data-source"
 	testHttpJWK           = TestHttpAny + "/jwk.json"
+	testHttpJWKNoX5c      = TestHttpAny + "/jwk-no-x5c.json"
 	testHttpJWKDER        = TestHttpAny + "/jwk-der.json"
 	testHttpBundles       = TestHttpAny + "/bundles/"
 	testReloadGroup       = TestHttpAny + "/groupReload"
@@ -547,6 +548,9 @@ func testHttpHandler() *mux.Router {
 	r.HandleFunc("/ws", wsHandler)
 	r.HandleFunc("/jwk.json", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, jwkTestJson)
+	})
+	r.HandleFunc("/jwk-no-x5c.json", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, jwkTestJsonNox5c)
 	})
 	r.HandleFunc("/jwk-der.json", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, jwkTestDERJson)
@@ -635,6 +639,18 @@ const jwkTestJson = `{
         "x5t": "12345"
     }]
 }`
+const jwkTestJsonNox5c = `{
+	"keys": [
+	  {
+		"use": "sig",
+		"kty": "RSA",
+		"kid": "12345",
+		"alg": "RS256",
+		"n": "yqZ4rwKF8qCExS7kpY4cnJa_37FMkJNkalZ3OuslLB0oRL8T4c94kdF4aeNzSFkSe2n99IBI6Ssl79vbfMZb-t06L0Q94k-_P37x7-_RJZiff4y1VGjrnrnMI2iu9l4iBBRYzNmG6eblroEMMWlgk5tysHgxB59CSNIcD9gqk1hx4n_FgOmvKsfQgWHNlPSDTRcWGWGhB2_XgNVYG2pOlQxAPqLhBHeqGTXBbPfGF9cHzixpsPr6GtbzPwhsQ_8bPxoJ7hdfn-rzztks3d6-HWURcyNTLRe0mjXjjee9Z6-gZ-H-fS4pnP9tqT7IgU6ePUWTpjoiPtLexgsAa_ctjQ",
+		"e": "AQAB"
+	  }
+	]
+  }`
 
 // This has public key encoded as PKIX, ASN.1 DER form.
 const jwkTestDERJson = `{
