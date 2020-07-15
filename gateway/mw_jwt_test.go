@@ -13,7 +13,6 @@ import (
 
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/lonelycode/go-uuid/uuid"
-	"github.com/square/go-jose"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/TykTechnologies/tyk/test"
@@ -2045,13 +2044,4 @@ func TestJWTExpOverride(t *testing.T) {
 		}...)
 	})
 
-}
-
-func TestCheck(t *testing.T) {
-	var jwkSetFallback jose.JSONWebKeySet
-	err := json.Unmarshal([]byte(jwkTestJsonNox5c), &jwkSetFallback)
-	if err != nil {
-		t.Error(err)
-	}
-	t.Errorf("%#v", jwkSetFallback)
 }
