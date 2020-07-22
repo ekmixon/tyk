@@ -149,8 +149,6 @@ func (k *JWTMiddleware) getSecretFromURL(url, kid, keyType string) (interface{},
 			k.Logger().WithError(err).Error("Failed to get read response body")
 			return nil, err
 		}
-		// Now this is not standard JWK an assumption here is maybe we passed jwk
-		// with `rsa.PublicKey` in x5c
 		if jwkSet, err = parseJWK(buf); err != nil {
 			k.Logger().WithError(err).Error("Failed to decode body JWK")
 			return nil, err
