@@ -1400,47 +1400,37 @@ func TestJWTSessionRSAWithEncodedJWK(t *testing.T) {
 	flush := func() {
 		if JWKCache != nil {
 			JWKCache.Flush()
-			JWKCacheSquare.Flush()
 		}
 	}
 	t.Run("Direct JWK URL", func(t *testing.T) {
-		{
-			spec.JWTSource = testHttpJWK
-			LoadAPI(spec)
-			flush()
-			ts.Run(t, test.TestCase{
-				Headers: authHeaders, Code: http.StatusOK,
-			})
+		links := []struct {
+			name, link string
+		}{
+			{"standard jwk", testHttpJWK},
+			{"jwk with x5c certs that has public key", testHttpJWKLegacy},
 		}
-		{
-			spec.JWTSource = testHttpJWKNoX5c
-			LoadAPI(spec)
-			flush()
-			ts.Run(t, test.TestCase{
-				Headers: authHeaders, Code: http.StatusOK,
+		for _, v := range links {
+			t.Run(v.name, func(t *testing.T) {
+				t.Run("Plain", func(t *testing.T) {
+					spec.JWTSource = v.link
+					LoadAPI(spec)
+					flush()
+					ts.Run(t, test.TestCase{
+						Headers: authHeaders, Code: http.StatusOK,
+					})
+				})
+				t.Run("Base64", func(t *testing.T) {
+					spec.JWTSource = v.link
+					LoadAPI(spec)
+					flush()
+					ts.Run(t, test.TestCase{
+						Headers: authHeaders, Code: http.StatusOK,
+					})
+				})
 			})
 		}
 	})
 
-	t.Run("Base64 JWK URL", func(t *testing.T) {
-		t.Skip()
-		{
-			spec.JWTSource = base64.StdEncoding.EncodeToString([]byte(testHttpJWK))
-			LoadAPI(spec)
-			flush()
-			ts.Run(t, test.TestCase{
-				Headers: authHeaders, Code: http.StatusOK,
-			})
-		}
-		{
-			spec.JWTSource = base64.StdEncoding.EncodeToString([]byte(testHttpJWKNoX5c))
-			LoadAPI(spec)
-			flush()
-			ts.Run(t, test.TestCase{
-				Headers: authHeaders, Code: http.StatusOK,
-			})
-		}
-	})
 	t.Run("Direct JWK URL with der encoding", func(t *testing.T) {
 		t.Skip()
 		spec.JWTSource = testHttpJWKDER

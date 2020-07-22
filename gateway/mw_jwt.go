@@ -1,7 +1,10 @@
 package gateway
 
 import (
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/md5"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -42,7 +45,6 @@ func (k *JWTMiddleware) EnabledForSpec() bool {
 }
 
 var JWKCache *cache.Cache
-var JWKCacheSquare *cache.Cache
 
 type JWK struct {
 	Alg string   `json:"alg"`
@@ -59,16 +61,78 @@ type JWKs struct {
 	Keys []JWK `json:"keys"`
 }
 
+func parseJWK(buf []byte) (*jose.JSONWebKeySet, error) {
+	var j jose.JSONWebKeySet
+	err := json.Unmarshal(buf, &j)
+	if err == nil {
+		return &j, nil
+	}
+	// try to format the object assuming it was in in legacy format. We have to
+	// iterate on all keys because one of the keys is not standard.
+	var k JWKs
+	err = json.Unmarshal(buf, &k)
+	if err != nil {
+		return nil, err
+	}
+	j.Keys = nil
+	for _, v := range k.Keys {
+		jk, err := joseKeyFromLegacy(v)
+		if err != nil {
+			return nil, err
+		}
+		j.Keys = append(j.Keys, jk)
+	}
+	return &j, nil
+}
+
+// joseKeyFromLegacy derives jose.JSONWebKey for JWK. This handles the legacy bahavior
+// - Using x5c certificate's public key
+// - Using public key passed in x5c field.
+func joseKeyFromLegacy(j JWK) (jose.JSONWebKey, error) {
+	if j.N == "" {
+		if len(j.X5c) == 0 {
+			return jose.JSONWebKey{}, errors.New("Invalid jwk")
+		}
+		// legacy with no n field
+		b, err := base64.StdEncoding.DecodeString(j.X5c[0])
+		if err != nil {
+			return jose.JSONWebKey{}, err
+		}
+		key, err := ParseRSAPublicKey(b)
+		if err != nil {
+			return jose.JSONWebKey{}, err
+		}
+		return jose.JSONWebKey{
+			Key:       key,
+			KeyID:     j.KID,
+			Algorithm: j.Alg,
+			Use:       j.Use,
+		}, nil
+	}
+	// Remove certificate since we have n and e set. Let jose handle the decoding
+	// and verification.
+	j.X5c = nil
+	j.X5t = ""
+	b, err := json.Marshal(j)
+	if err != nil {
+		return jose.JSONWebKey{}, err
+	}
+	var k jose.JSONWebKey
+	err = json.Unmarshal(b, &k)
+	if err != nil {
+		return jose.JSONWebKey{}, err
+	}
+	return k, nil
+}
+
 func (k *JWTMiddleware) getSecretFromURL(url, kid, keyType string) (interface{}, error) {
 	// Implement a cache
 	if JWKCache == nil {
 		k.Logger().Debug("Creating JWK Cache")
 		JWKCache = cache.New(240*time.Second, 30*time.Second)
-		JWKCacheSquare = cache.New(240*time.Second, 30*time.Second)
 	}
 
-	var jwkSet JWKs
-	var jwkSetFallback jose.JSONWebKeySet
+	var jwkSet *jose.JSONWebKeySet
 
 	cachedJWK, found := JWKCache.Get(k.Spec.APIID)
 	if !found {
@@ -85,9 +149,9 @@ func (k *JWTMiddleware) getSecretFromURL(url, kid, keyType string) (interface{},
 			k.Logger().WithError(err).Error("Failed to get read response body")
 			return nil, err
 		}
-		json.Unmarshal(buf, &jwkSetFallback)
-		// Decode it
-		if err := json.Unmarshal(buf, &jwkSet); err != nil {
+		// Now this is not standard JWK an assumption here is maybe we passed jwk
+		// with `rsa.PublicKey` in x5c
+		if jwkSet, err = parseJWK(buf); err != nil {
 			k.Logger().WithError(err).Error("Failed to decode body JWK")
 			return nil, err
 		}
@@ -95,37 +159,32 @@ func (k *JWTMiddleware) getSecretFromURL(url, kid, keyType string) (interface{},
 		// Cache it
 		k.Logger().Debug("Caching JWK")
 		JWKCache.Set(k.Spec.APIID, jwkSet, cache.DefaultExpiration)
-		JWKCacheSquare.Set(k.Spec.APIID, jwkSetFallback, cache.DefaultExpiration)
 	} else {
-		jwkSet = cachedJWK.(JWKs)
-		if v, ok := JWKCacheSquare.Get(k.Spec.APIID); ok {
-			jwkSetFallback = v.(jose.JSONWebKeySet)
+		jwkSet = cachedJWK.(*jose.JSONWebKeySet)
+	}
+
+	kty := func(k interface{}) string {
+		switch k.(type) {
+		case ed25519.PublicKey, ed25519.PrivateKey:
+			return "OKP"
+		case *ecdsa.PublicKey, *ecdsa.PrivateKey:
+			return "EC"
+		case *rsa.PublicKey, *rsa.PrivateKey:
+			return "RSA"
+		case []byte:
+			return "oct"
+		default:
+			return ""
 		}
 	}
 
 	k.Logger().Debug("Checking JWKs...")
-	for i, val := range jwkSet.Keys {
-		if val.KID != kid || strings.ToLower(val.Kty) != strings.ToLower(keyType) {
+	for _, val := range jwkSet.Keys {
+		if val.KeyID != kid || strings.ToLower(kty(val.Key)) != strings.ToLower(keyType) {
 			continue
 		}
-		if len(val.X5c) == 0 {
-			if len(jwkSetFallback.Keys) == len(jwkSet.Keys) {
-				return jwkSetFallback.Keys[i].Key, nil
-			}
-		}
-		if len(val.X5c) > 0 {
-			// Use the first cert only
-			decodedCert, err := base64.StdEncoding.DecodeString(val.X5c[0])
-			if err != nil {
-				return nil, err
-			}
-			k.Logger().Debug("Found cert! Replying...")
-			k.Logger().Debug("Cert was: ", string(decodedCert))
-			return decodedCert, nil
-		}
-		return nil, errors.New("no certificates in JWK")
+		return val.Key, nil
 	}
-
 	return nil, errors.New("No matching KID could be found")
 }
 
