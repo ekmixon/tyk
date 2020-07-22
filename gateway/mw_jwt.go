@@ -47,83 +47,13 @@ func (k *JWTMiddleware) EnabledForSpec() bool {
 
 var JWKCache *cache.Cache
 
-type JWK struct {
-	Alg string   `json:"alg"`
-	Kty string   `json:"kty"`
-	Use string   `json:"use"`
-	X5c []string `json:"x5c"`
-	N   string   `json:"n"`
-	E   string   `json:"e"`
-	KID string   `json:"kid"`
-	X5t string   `json:"x5t"`
-}
-
-type JWKs struct {
-	Keys []JWK `json:"keys"`
-}
-
 func parseJWK(buf []byte) (*jose.JSONWebKeySet, error) {
 	var j jose.JSONWebKeySet
 	err := json.Unmarshal(buf, &j)
-	if err == nil {
-		return &j, nil
-	}
-	// try to format the object assuming it was in in legacy format. We have to
-	// iterate on all keys because one of the keys is not standard.
-	var k JWKs
-	err = json.Unmarshal(buf, &k)
 	if err != nil {
 		return nil, err
 	}
-	j.Keys = nil
-	for _, v := range k.Keys {
-		jk, err := joseKeyFromLegacy(v)
-		if err != nil {
-			return nil, err
-		}
-		j.Keys = append(j.Keys, jk)
-	}
 	return &j, nil
-}
-
-// joseKeyFromLegacy derives jose.JSONWebKey for JWK. This handles the legacy bahavior
-// - Using x5c certificate's public key
-// - Using public key passed in x5c field.
-func joseKeyFromLegacy(j JWK) (jose.JSONWebKey, error) {
-	if j.N == "" {
-		if len(j.X5c) == 0 {
-			return jose.JSONWebKey{}, errors.New("Invalid jwk")
-		}
-		// legacy with no n field
-		b, err := base64.StdEncoding.DecodeString(j.X5c[0])
-		if err != nil {
-			return jose.JSONWebKey{}, err
-		}
-		key, err := ParseRSAPublicKey(b)
-		if err != nil {
-			return jose.JSONWebKey{}, err
-		}
-		return jose.JSONWebKey{
-			Key:       key,
-			KeyID:     j.KID,
-			Algorithm: j.Alg,
-			Use:       j.Use,
-		}, nil
-	}
-	// Remove certificate since we have n and e set. Let jose handle the decoding
-	// and verification.
-	j.X5c = nil
-	j.X5t = ""
-	b, err := json.Marshal(j)
-	if err != nil {
-		return jose.JSONWebKey{}, err
-	}
-	var k jose.JSONWebKey
-	err = json.Unmarshal(b, &k)
-	if err != nil {
-		return jose.JSONWebKey{}, err
-	}
-	return k, nil
 }
 
 func (k *JWTMiddleware) getSecretFromURL(url, kid, keyType string) (interface{}, error) {
