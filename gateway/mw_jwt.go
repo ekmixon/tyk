@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"crypto/ecdsa"
-	"crypto/ed25519"
 	"crypto/md5"
 	"crypto/rsa"
 	"crypto/x509"
@@ -15,6 +14,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ed25519"
 
 	jwt "github.com/dgrijalva/jwt-go"
 	cache "github.com/pmylund/go-cache"
