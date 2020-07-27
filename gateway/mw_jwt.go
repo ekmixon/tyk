@@ -1,9 +1,7 @@
 package gateway
 
 import (
-	"crypto/ecdsa"
 	"crypto/md5"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -14,8 +12,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"golang.org/x/crypto/ed25519"
 
 	jwt "github.com/dgrijalva/jwt-go"
 	cache "github.com/pmylund/go-cache"
@@ -91,28 +87,9 @@ func (k *JWTMiddleware) getSecretFromURL(url, kid, keyType string) (interface{},
 	} else {
 		jwkSet = cachedJWK.(*jose.JSONWebKeySet)
 	}
-
-	kty := func(k interface{}) string {
-		switch k.(type) {
-		case ed25519.PublicKey, ed25519.PrivateKey:
-			return "OKP"
-		case *ecdsa.PublicKey, *ecdsa.PrivateKey:
-			return "EC"
-		case *rsa.PublicKey, *rsa.PrivateKey:
-			return "RSA"
-		case []byte:
-			return "oct"
-		default:
-			return ""
-		}
-	}
-
 	k.Logger().Debug("Checking JWKs...")
-	for _, val := range jwkSet.Keys {
-		if val.KeyID != kid || strings.ToLower(kty(val.Key)) != strings.ToLower(keyType) {
-			continue
-		}
-		return val.Key, nil
+	if keys := jwkSet.Key(kid); len(keys) > 0 {
+		return keys[0].Key, nil
 	}
 	return nil, errors.New("No matching KID could be found")
 }
