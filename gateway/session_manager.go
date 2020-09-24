@@ -203,17 +203,17 @@ func (l *SessionLimiter) ForwardMessage(r *http.Request, currentSession *user.Se
 	}
 
 	if accessDef.Limit == nil {
-		accessDef = &user.AccessDefinition{
-			Limit: &user.APILimit{
-				QuotaMax:           currentSession.QuotaMax,
-				QuotaRenewalRate:   currentSession.QuotaRenewalRate,
-				QuotaRenews:        currentSession.QuotaRenews,
-				Rate:               currentSession.Rate,
-				Per:                currentSession.Per,
-				ThrottleInterval:   currentSession.ThrottleInterval,
-				ThrottleRetryLimit: currentSession.ThrottleRetryLimit,
-				MaxQueryDepth:      currentSession.MaxQueryDepth,
-			},
+		// inherit global limit from session
+		// we are not overriding the whole access definition - to not loose field access rights if any
+		accessDef.Limit = &user.APILimit{
+			QuotaMax:           currentSession.QuotaMax,
+			QuotaRenewalRate:   currentSession.QuotaRenewalRate,
+			QuotaRenews:        currentSession.QuotaRenews,
+			Rate:               currentSession.Rate,
+			Per:                currentSession.Per,
+			ThrottleInterval:   currentSession.ThrottleInterval,
+			ThrottleRetryLimit: currentSession.ThrottleRetryLimit,
+			MaxQueryDepth:      currentSession.MaxQueryDepth,
 		}
 	}
 
@@ -284,7 +284,7 @@ func (l *SessionLimiter) DepthLimitEnabled(graphqlEnabled bool, accessDef *user.
 	}
 
 	// There is a possibility that depth limit is disabled on field level too,
-	// but we continue with this because of the explanation above.
+	// but we continue with this as we do not know per root field level values until we have calculated request complexity
 	if len(accessDef.FieldAccessRights) > 0 {
 		return true
 	}
@@ -320,7 +320,7 @@ func (l *SessionLimiter) DepthLimitExceeded(gqlRequest *graphql.Request, accessD
 
 			if greaterThanInt(fieldComplexityRes.Depth, fieldAccessDef.Limits.MaxQueryDepth) {
 				log.Debugf("Complexity of the field: %s.%s is higher than the allowed limit '%d'",
-					fieldAccessDef.TypeName, fieldAccessDef.FieldName, accessDef.Limit.MaxQueryDepth)
+					fieldAccessDef.TypeName, fieldAccessDef.FieldName, fieldAccessDef.Limits.MaxQueryDepth)
 
 				return sessionFailDepthLimit
 			}
