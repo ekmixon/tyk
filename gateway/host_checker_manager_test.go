@@ -107,9 +107,7 @@ func TestCheckActivePollerLoop(t *testing.T) {
 	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker:"}
 	hc.Init(redisStorage)
 	//defering the stop of the CheckActivePollerLoop
-	defer func(hc *HostCheckerManager) {
-		hc.stopLoop = true
-	}(hc)
+	defer hc.StopPoller()
 
 	ctx := context.Background()
 	go hc.CheckActivePollerLoop(ctx)
