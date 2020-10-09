@@ -1,15 +1,13 @@
 package gateway
 
 import (
-	"bytes"
 	"context"
-	"net/http"
-	"testing"
-	"text/template"
-
+	"github.com/TykTechnologies/tyk/apidef"
 	"github.com/TykTechnologies/tyk/config"
 	"github.com/TykTechnologies/tyk/storage"
 	uuid "github.com/satori/go.uuid"
+	"net/http"
+	"testing"
 )
 
 func TestHostCheckerManagerInit(t *testing.T) {
@@ -142,26 +140,16 @@ func TestStartPoller(t *testing.T) {
 func TestRecordUptimeAnalytics(t *testing.T) {
 
 	hc := &HostCheckerManager{}
-	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker-test:"}
+	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker-test-analytics:"}
 	hc.Init(redisStorage)
 
-	specTmpl := template.Must(template.New("spec").Parse(sampleUptimeTestAPI))
-
-	tmplData := struct {
-		Host1, Host2 string
-	}{
-		testHttpFailureAny,
-		testHttpFailureAny,
-	}
-
-	specBuf := &bytes.Buffer{}
-	specTmpl.ExecuteTemplate(specBuf, specTmpl.Name(), &tmplData)
-
-	spec := CreateDefinitionFromString(specBuf.String())
+	spec := &APISpec{}
+	spec.APIDefinition = &apidef.APIDefinition{APIID: "test-analytics"}
 	spec.UptimeTests.Config.ExpireUptimeAnalyticsAfter = 30
 	apisMu.Lock()
 	apisByID = map[string]*APISpec{spec.APIID: spec}
 	apisMu.Unlock()
+
 	defer func() {
 		apisMu.Lock()
 		apisByID = make(map[string]*APISpec)
