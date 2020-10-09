@@ -13,8 +13,6 @@ import (
 )
 
 func TestHostCheckerManagerInit(t *testing.T) {
-	ts := StartTest()
-	defer ts.Close()
 
 	hc := HostCheckerManager{}
 	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker-test:"}
@@ -43,9 +41,8 @@ func TestAmIPolling(t *testing.T) {
 	globalConf := config.Global()
 	globalConf.UptimeTests.PollerGroup = "TEST"
 	config.SetGlobal(globalConf)
+	defer ResetTestConfig()
 
-	ts := StartTest()
-	defer ts.Close()
 
 	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker-test:"}
 	hc.Init(redisStorage)
@@ -53,7 +50,11 @@ func TestAmIPolling(t *testing.T) {
 	hc2.Init(redisStorage)
 
 	polling = hc.AmIPolling()
+	defer hc.StopPoller()
+
 	pollingHc2 := hc2.AmIPolling()
+	defer hc2.StopPoller()
+
 	if !polling && pollingHc2 {
 		t.Error("HostCheckerManager storage configured, it shouldn't have failed.")
 	}
@@ -67,13 +68,14 @@ func TestAmIPolling(t *testing.T) {
 		t.Error("PollerActiveInstanceID.TEST value should be hc.Id")
 	}
 
-	//Testing if the PollerCacheKey doesn't contains the poller_group by default
 	ResetTestConfig()
+	//Testing if the PollerCacheKey doesn't contains the poller_group by default
 	hc = HostCheckerManager{}
-
 	redisStorage = &storage.RedisCluster{KeyPrefix: "host-checker-test:"}
 	hc.Init(redisStorage)
 	hc.AmIPolling()
+	defer hc.StopPoller()
+
 
 	activeInstance, err = hc.store.GetKey("PollerActiveInstanceID")
 	if err != nil {
@@ -103,11 +105,11 @@ func TestCheckActivePollerLoop(t *testing.T) {
 	hc := &HostCheckerManager{}
 	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker-test-1:"}
 	hc.Init(redisStorage)
-	//defering the stop of the CheckActivePollerLoop
+
+	ctx := context.TODO()
+	go hc.CheckActivePollerLoop(ctx)
 	defer hc.StopPoller()
 
-	ctx := context.Background()
-	go hc.CheckActivePollerLoop(ctx)
 
 	found := false
 
@@ -128,7 +130,9 @@ func TestCheckActivePollerLoop(t *testing.T) {
 
 func TestStartPoller(t *testing.T) {
 	hc := HostCheckerManager{}
-	ctx := context.Background()
+	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker-TestStartPoller:"}
+	hc.Init(redisStorage)
+	ctx := context.TODO()
 
 	hc.StartPoller(ctx)
 	defer hc.StopPoller()
