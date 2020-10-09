@@ -43,7 +43,6 @@ func TestAmIPolling(t *testing.T) {
 	config.SetGlobal(globalConf)
 	defer ResetTestConfig()
 
-
 	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker-test:"}
 	hc.Init(redisStorage)
 	hc2 := HostCheckerManager{}
@@ -75,7 +74,6 @@ func TestAmIPolling(t *testing.T) {
 	hc.Init(redisStorage)
 	hc.AmIPolling()
 	defer hc.StopPoller()
-
 
 	activeInstance, err = hc.store.GetKey("PollerActiveInstanceID")
 	if err != nil {
@@ -109,7 +107,6 @@ func TestCheckActivePollerLoop(t *testing.T) {
 	ctx := context.TODO()
 	go hc.CheckActivePollerLoop(ctx)
 	defer hc.StopPoller()
-
 
 	found := false
 
