@@ -17,7 +17,7 @@ func TestHostCheckerManagerInit(t *testing.T) {
 	defer ts.Close()
 
 	hc := HostCheckerManager{}
-	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker:"}
+	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker-test:"}
 	hc.Init(redisStorage)
 
 	if hc.Id == "" {
@@ -47,7 +47,7 @@ func TestAmIPolling(t *testing.T) {
 	ts := StartTest()
 	defer ts.Close()
 
-	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker:"}
+	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker-test:"}
 	hc.Init(redisStorage)
 	hc2 := HostCheckerManager{}
 	hc2.Init(redisStorage)
@@ -72,7 +72,7 @@ func TestAmIPolling(t *testing.T) {
 	emptyRedis()
 	hc = HostCheckerManager{}
 
-	redisStorage = &storage.RedisCluster{KeyPrefix: "host-checker:"}
+	redisStorage = &storage.RedisCluster{KeyPrefix: "host-checker-test:"}
 	hc.Init(redisStorage)
 	hc.AmIPolling()
 
@@ -104,7 +104,7 @@ func TestCheckActivePollerLoop(t *testing.T) {
 	emptyRedis()
 
 	hc := &HostCheckerManager{}
-	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker:"}
+	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker-test:"}
 	hc.Init(redisStorage)
 	//defering the stop of the CheckActivePollerLoop
 	defer hc.StopPoller()
@@ -146,7 +146,7 @@ func TestRecordUptimeAnalytics(t *testing.T) {
 	emptyRedis()
 
 	hc := &HostCheckerManager{}
-	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker:"}
+	redisStorage := &storage.RedisCluster{KeyPrefix: "host-checker-test:"}
 	hc.Init(redisStorage)
 
 	specTmpl := template.Must(template.New("spec").Parse(sampleUptimeTestAPI))
